@@ -2,19 +2,22 @@ package cz.bliksoft.ulanzi.fx;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import cz.bliksoft.javautils.app.ui.actions.UIActionBase;
+import cz.bliksoft.javautils.app.ui.actions.IUIAction;
+import cz.bliksoft.javautils.app.ui.interfaces.IIconSpecPropertyProvider;
 import cz.bliksoft.ulanzi.client.DeckClient;
 import cz.bliksoft.ulanzi.client.DeckListener;
 import cz.bliksoft.ulanzi.client.SlotInput;
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
+import javafx.beans.property.Property;
 import javafx.beans.value.ObservableBooleanValue;
 
 /**
@@ -34,6 +37,10 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 
 	public DeckBinder(String appId) {
 		this(listener -> new DeckClient(appId, listener));
+	}
+
+	public DeckBinder(URI uri, String appId) {
+		this(listener -> new DeckClient(uri, appId, listener));
 	}
 
 	DeckBinder(Function<DeckListener, DeckClient> clientFactory) {
@@ -76,10 +83,14 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 
 	@Override
 	public void close() {
-		onFxThread(() -> {
-			pages.values().forEach(RegisteredPage::detach);
-			pages.clear();
-		});
+		try {
+			onFxThread(() -> {
+				pages.values().forEach(RegisteredPage::detach);
+				pages.clear();
+			});
+		} catch (IllegalStateException toolkitGone) {
+			log.log(Level.DEBUG, "JavaFX has already exited, so listeners stay attached");
+		}
 		client.close();
 	}
 
@@ -102,20 +113,20 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 		});
 	}
 
-	private static UIActionBase actionFor(SlotBinding binding, SlotInput input) {
+	private static IUIAction actionFor(SlotBinding binding, SlotInput input) {
 		return switch (input.type()) {
 			case RUN -> binding.press;
 			case ROTATE -> {
 				boolean isLeft = input.direction() == SlotInput.Direction.LEFT;
-				UIActionBase held = isLeft ? binding.heldLeft : binding.heldRight;
-				UIActionBase plain = isLeft ? binding.left : binding.right;
+				IUIAction held = isLeft ? binding.heldLeft : binding.heldRight;
+				IUIAction plain = isLeft ? binding.left : binding.right;
 				yield input.held() && held != null ? held : plain;
 			}
 			case DOWN, UP -> null;
 		};
 	}
 
-	private static void run(UIActionBase action) {
+	private static void run(IUIAction action) {
 		if (action == null || !isTrueOrUnset(action.enabledProperty()) || !isTrueOrUnset(action.visibleProperty()))
 			return;
 		try {
@@ -123,6 +134,10 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 		} catch (RuntimeException e) {
 			log.log(Level.ERROR, "Action " + action.getKey() + " failed", e);
 		}
+	}
+
+	private static Property<String> iconSpecOf(IUIAction action) {
+		return action instanceof IIconSpecPropertyProvider provider ? provider.iconSpecProperty() : null;
 	}
 
 	private static boolean isTrueOrUnset(ObservableBooleanValue value) {
@@ -144,7 +159,7 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 		RegisteredPage(DeckPage source) {
 			this.source = source;
 			source.bindings.forEach((slotId, binding) -> {
-				UIActionBase action = binding.display;
+				IUIAction action = binding.display;
 				if (action == null)
 					return;
 				// properties may change on any thread, painting stays on the FX thread
@@ -152,7 +167,7 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 					if (pages.get(source.getId()) == this)
 						render(slotId, binding);
 				});
-				for (Observable property : new Observable[] { action.textProperty(), action.iconSpecProperty(),
+				for (Observable property : new Observable[] { action.textProperty(), iconSpecOf(action),
 						action.enabledProperty(), action.visibleProperty() }) {
 					if (property != null) {
 						property.addListener(repaint);
@@ -172,13 +187,14 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 		}
 
 		private void render(String slotId, SlotBinding binding) {
-			UIActionBase action = binding.display;
+			IUIAction action = binding.display;
 			if (action == null) {
 				client.render(source.getId(), slotId, null, null, binding.nav);
 				return;
 			}
 			boolean visible = isTrueOrUnset(action.visibleProperty());
-			String spec = !visible || action.iconSpecProperty() == null ? null : action.iconSpecProperty().getValue();
+			Property<String> iconSpec = iconSpecOf(action);
+			String spec = !visible || iconSpec == null ? null : iconSpec.getValue();
 			String text = !visible || action.textProperty() == null ? null : action.textProperty().get();
 			boolean dimmed = !isTrueOrUnset(action.enabledProperty());
 			byte[] png = renderer.render(spec, binding.encoder ? KNOB_IMAGE_SIZE : KEY_IMAGE_SIZE, dimmed);
