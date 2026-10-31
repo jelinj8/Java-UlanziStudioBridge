@@ -15,6 +15,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/$PLUGIN"
 cd "$ROOT/bridge-plugin/$PLUGIN"
 cp -r assets libs plugin property-inspector manifest.json package.json package-lock.json "$STAGE/$PLUGIN/"
+cp "$ROOT/LICENSE" "$STAGE/$PLUGIN/"
 
 cd "$STAGE/$PLUGIN"
 npm ci --omit=dev --no-audit --no-fund

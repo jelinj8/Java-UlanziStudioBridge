@@ -9,6 +9,31 @@
 	<version>${revision}</version>
 	<packaging>pom</packaging>
 
+	<name>Ulanzi Studio Bridge</name>
+	<description>Lets applications drive the keys and dials of an Ulanzi deck through Ulanzi Studio.</description>
+	<url>https://github.com/jelinj8/Java-UlanziStudioBridge</url>
+
+	<licenses>
+		<license>
+			<name>Apache License, Version 2.0</name>
+			<url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<id>jelinj8</id>
+			<name>Jakub Jelínek</name>
+			<email>jakub.jelinek@gmail.com</email>
+		</developer>
+	</developers>
+
+	<scm>
+		<connection>scm:git:https://github.com/jelinj8/Java-UlanziStudioBridge.git</connection>
+		<developerConnection>scm:git:https://github.com/jelinj8/Java-UlanziStudioBridge.git</developerConnection>
+		<url>https://github.com/jelinj8/Java-UlanziStudioBridge</url>
+	</scm>
+
 	<modules>
 		<module>ulanzi-client</module>
 		<module>ulanzi-client-fx</module>
@@ -28,7 +53,7 @@
 				<version>1.7.3</version>
 				<configuration>
 					<updatePomFile>true</updatePomFile>
-					<flattenMode>resolveCiFriendliesOnly</flattenMode>
+					<flattenMode>ossrh</flattenMode>
 				</configuration>
 				<executions>
 					<execution>
@@ -67,4 +92,69 @@
 			</plugins>
 		</pluginManagement>
 	</build>
+
+	<profiles>
+		<profile>
+			<id>release</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>3.4.0</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<phase>package</phase>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<version>3.12.0</version>
+						<configuration>
+							<doclint>none</doclint>
+						</configuration>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<phase>package</phase>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>3.2.8</version>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.sonatype.central</groupId>
+						<artifactId>central-publishing-maven-plugin</artifactId>
+						<version>0.10.0</version>
+						<extensions>true</extensions>
+						<configuration>
+							<publishingServerId>central</publishingServerId>
+							<autoPublish>false</autoPublish>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

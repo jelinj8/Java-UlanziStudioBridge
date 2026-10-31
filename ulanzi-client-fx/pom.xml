@@ -11,6 +11,7 @@
 	</parent>
 
 	<artifactId>ulanzi-client-fx</artifactId>
+	<name>Ulanzi Studio Bridge JavaFX bindings</name>
 	<description>Binds BSToolbox-jfx UI actions to deck slots, in switchable pages.</description>
 
 	<dependencies>

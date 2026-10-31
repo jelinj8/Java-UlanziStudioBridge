@@ -1,4 +1,4 @@
-# Pushing a vMAJOR.MINOR.PATCH tag publishes that version: the Maven artifacts, the plugin archive
+# A vMAJOR.MINOR.PATCH tag, arriving from GitHub through the pull mirror, publishes that version: the Maven artifacts, the plugin archive
 # as a generic package, and a Forgejo release with the archive attached.
 #
 # The version comes from the tag and nothing is committed back, unlike the house maven-release.yml.
