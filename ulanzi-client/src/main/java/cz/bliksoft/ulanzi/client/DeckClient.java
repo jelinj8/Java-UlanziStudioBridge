@@ -85,7 +85,7 @@ public class DeckClient implements AutoCloseable {
 	/**
 	 * Replaces a slot's content on a page. The first render makes its page current.
 	 *
-	 * @param png  PNG image, or {@code null} for the plugin icon
+	 * @param png  PNG image, or {@code null} for an empty frame
 	 * @param text title, or {@code null} for none
 	 * @param nav  page navigation on press, or {@code null} for none
 	 */

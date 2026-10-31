@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const zlib = require('zlib');
 const { Bridge, PROTOCOL } = require('../plugin/bridge');
+const { UNCLAIMED_SLOT_PNG, OFFLINE_SLOT_PNG } = require('../plugin/placeholders');
 
 const UUID = 'com.ulanzi.ulanzistudio.deckbridge.slot';
 
@@ -108,7 +110,7 @@ test('paints use state and setTitle on keys, setFeedback on dials, nothing on Di
 	const cmds = studio.map((m) => m.cmd);
 	assert.ok(cmds.includes('state') && cmds.includes('setTitle') && cmds.includes('setFeedback'));
 	assert.ok(!JSON.stringify(studio).includes('CCC'));
-	const feedback = studio.find((m) => m.cmd === 'setFeedback');
+	const feedback = studio.filter((m) => m.cmd === 'setFeedback').pop();
 	assert.deepEqual(feedback.layout, { icon: { value: 'data:image/png;base64,BBB' }, title: { text: 'U' } });
 });
 
@@ -227,8 +229,8 @@ test('disconnect shows offline and keeps the cache for reconnect', () => {
 	bridge.onAppMessage(conn, { type: 'render', page: 'p', slotId: 'D200X:0_0', image: 'AAA' });
 	studio.length = 0;
 	bridge.onAppDisconnected(conn);
-	assert.equal(studio[0].param.statelist[0].type, 0);
-	assert.equal(studio[1].param.text, 'offline');
+	assert.equal(studio[0].param.statelist[0].data, OFFLINE_SLOT_PNG);
+	assert.equal(studio[1].param.text, '');
 	studio.length = 0;
 	connect(bridge);
 	assert.equal(studio[0].param.statelist[0].data, 'AAA');
@@ -316,13 +318,12 @@ test('nav in a group slot acts on the focused app, including its pages', () => {
 });
 
 test('when the focused app disconnects, the slots go to the next one, then offline', () => {
-	const { bridge, studio, a, b, painted } = groupSetup();
+	const { bridge, a, b, painted } = groupSetup();
 	bridge.onAppMessage(b, { type: 'focus' });
 	bridge.onAppDisconnected(b);
 	assert.equal(painted().data, 'AAA');
 	bridge.onAppDisconnected(a);
-	assert.equal(painted().type, 0);
-	assert.equal(studio.filter((m) => m.cmd === 'setTitle').pop().param.text, 'offline');
+	assert.equal(painted().data, OFFLINE_SLOT_PNG);
 });
 
 test('a reconnecting member keeps its focus order and its pages', () => {
@@ -366,6 +367,55 @@ test('reconnecting in another group leaves the old one', () => {
 	const { bridge, painted } = groupSetup();
 	connectInGroup(bridge, 'a', 'other');
 	assert.equal(painted().data, 'BBB');
+});
+
+test('a connected app\'s slot without content is unclaimed, on keys and knobs', () => {
+	const { bridge, studio } = setup();
+	bridge.onStudioMessage(slot('0_0'));
+	bridge.onStudioMessage(slot('2_3', { controller: 'Encoder' }));
+	studio.length = 0;
+	connect(bridge);
+	assert.equal(studio.find((m) => m.cmd === 'state').param.statelist[0].data, UNCLAIMED_SLOT_PNG);
+	assert.equal(studio.find((m) => m.cmd === 'setFeedback').layout.icon.value, `data:image/png;base64,${UNCLAIMED_SLOT_PNG}`);
+});
+
+test('a slot with no connected app is offline, on keys and knobs', () => {
+	const { bridge, studio } = setup();
+	bridge.onStudioMessage(slot('0_0'));
+	bridge.onStudioMessage(slot('2_3', { controller: 'Encoder' }));
+	assert.equal(studio.find((m) => m.cmd === 'state').param.statelist[0].data, OFFLINE_SLOT_PNG);
+	assert.equal(studio.find((m) => m.cmd === 'setFeedback').layout.icon.value, `data:image/png;base64,${OFFLINE_SLOT_PNG}`);
+});
+
+test('text without an image shows on the unclaimed frame', () => {
+	const { bridge, studio } = setup();
+	bridge.onStudioMessage(slot('0_0'));
+	const conn = connect(bridge);
+	bridge.onAppMessage(conn, { type: 'render', page: 'p', slotId: 'D200X:0_0', text: 'T' });
+	assert.equal(studio.filter((m) => m.cmd === 'state').pop().param.statelist[0].data, UNCLAIMED_SLOT_PNG);
+	assert.equal(studio.filter((m) => m.cmd === 'setTitle').pop().param.text, 'T');
+});
+
+test('placeholders are valid dim images: a thin colored frame around black', () => {
+	const pixels = (base64) => {
+		const png = Buffer.from(base64, 'base64');
+		assert.equal(png.toString('latin1', 1, 4), 'PNG');
+		const size = png.readUInt32BE(16);
+		const idatStart = png.indexOf('IDAT') + 4;
+		const raw = zlib.inflateSync(png.subarray(idatStart, idatStart + png.readUInt32BE(idatStart - 8)));
+		const at = (x, y) => [...raw.subarray(y * (size * 3 + 1) + 1 + x * 3, y * (size * 3 + 1) + 4 + x * 3)];
+		return { size, at };
+	};
+	for (const base64 of [UNCLAIMED_SLOT_PNG, OFFLINE_SLOT_PNG]) {
+		const { size, at } = pixels(base64);
+		assert.deepEqual(at(size >> 1, size >> 1), [0, 0, 0], 'the middle is black');
+		assert.ok(Math.max(...at(0, 0)) > 0, 'the frame shows');
+		assert.ok(Math.max(...at(0, 0)) < 128, 'the frame stays dim');
+	}
+	const gray = pixels(UNCLAIMED_SLOT_PNG).at(0, 0);
+	const red = pixels(OFFLINE_SLOT_PNG).at(0, 0);
+	assert.ok(gray[0] === gray[1] && gray[1] === gray[2]);
+	assert.ok(red[0] > red[1] && red[0] > red[2]);
 });
 
 test('clear removes slots', () => {

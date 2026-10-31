@@ -1,5 +1,7 @@
 // Routes between Ulanzi Studio slots and connected apps. Holds the slot registry
 // and each app's pages; has no I/O of its own. See docs/protocol.md.
+const { UNCLAIMED_SLOT_PNG, OFFLINE_SLOT_PNG } = require('./placeholders');
+
 const PROTOCOL = 1;
 const DEFAULT_APP_ID = 'default';
 const DEFAULT_PAGE = 'main';
@@ -421,26 +423,24 @@ class Bridge {
 		const app = this.apps.get(this.#routeOf(slot));
 		const online = Boolean(app?.conn);
 		const content = online ? app.pages.get(app.current)?.get(slot.slotId) : null;
-		const text = online ? content?.text ?? '' : 'offline';
+		const text = content?.text ?? '';
+		const image = content?.image ?? (online ? UNCLAIMED_SLOT_PNG : OFFLINE_SLOT_PNG);
 
 		const now = this.now();
 		const last = slot.lastPaint;
-		if (last && last.content === content && last.text === text && now - last.at < DUPLICATE_PAINT_MS)
+		if (last && last.image === image && last.text === text && now - last.at < DUPLICATE_PAINT_MS)
 			return;
-		slot.lastPaint = { content, text, at: now };
+		slot.lastPaint = { image, text, at: now };
 
 		const { uuid, key, actionid } = slot;
-		if (slot.controller === 'Encoder' && content?.image) {
+		if (slot.controller === 'Encoder') {
 			this.toStudio({
 				cmd: 'setFeedback', uuid, key, actionid,
-				layout: { icon: { value: `data:image/png;base64,${content.image}` }, title: { text } },
+				layout: { icon: { value: `data:image/png;base64,${image}` }, title: { text } },
 			});
 			return;
 		}
-		// without an image the slot falls back to the manifest's default state
-		const entry = content?.image
-			? { uuid, key, actionid, type: 1, data: content.image, textData: text, showtext: Boolean(text) }
-			: { uuid, key, actionid, type: 0, state: 0, textData: text, showtext: Boolean(text) };
+		const entry = { uuid, key, actionid, type: 1, data: image, textData: text, showtext: Boolean(text) };
 		this.toStudio({ cmd: 'state', param: { statelist: [entry] } });
 		// keys don't display the text sent with state
 		this.toStudio({ cmd: 'setTitle', param: { uuid, key, actionid, text } });

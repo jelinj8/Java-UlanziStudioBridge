@@ -38,7 +38,7 @@ Apps connect to `ws://127.0.0.1:39380` (`DECK_BRIDGE_PORT` overrides the port). 
 - Navigation set in the inspector overrides `nav` from `render`.
 - Slots sharing an `appId` and `slotId` all show the same content. This covers the same position on several Studio pages, and also two devices of the same model, unless they're given different `slotId`s.
 - Pages are kept in memory and survive app reconnects, but not a bridge restart. After a reconnect the bridge repaints from them; after `welcome` with `currentPage: null`, the app must render again.
-- A slot with no content shows the plugin icon. While its app is disconnected it shows the icon with the title `offline`.
+- A slot with no image shows a black image with a thin dark gray frame, so it's visibly there without standing out. While its app is disconnected, the frame is dark red and there is no text.
 
 Image sizes that look good: about 196 px on keys, 128 px on knobs. None are cropped; smaller ones look coarse and 256 px looks soft on knobs.
 

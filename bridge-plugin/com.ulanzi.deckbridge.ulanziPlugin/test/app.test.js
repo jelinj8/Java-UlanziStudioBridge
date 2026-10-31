@@ -5,6 +5,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { once } = require('events');
 const WebSocket = require('ws');
+const { OFFLINE_SLOT_PNG } = require('../plugin/placeholders');
 
 const UUID = 'com.ulanzi.ulanzistudio.deckbridge.slot';
 const APP_PORT = 39381;
@@ -80,7 +81,7 @@ test('bridge connects to Studio, serves an app, and refuses browsers', async (t)
 
 	await assert.rejects(connectApp({ origin: 'https://example.com' }), /401/);
 
-	const offline = nextMessage(studio, (m) => m.cmd === 'setTitle' && m.param.text === 'offline');
+	const offline = nextMessage(studio, (m) => m.cmd === 'state' && m.param.statelist[0].data === OFFLINE_SLOT_PNG);
 	app.close();
 	await offline;
 });

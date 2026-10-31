@@ -18,7 +18,7 @@
       "Name": "App slot",
       "Icon": "assets/icon.svg",
       "States": [
-        { "Name": "Default", "Image": "assets/icon.svg" }
+        { "Name": "Default", "Image": "assets/slot.svg" }
       ],
       "Controllers": ["Keypad", "Encoder"],
       "Encoder": { "layout": "$UA1" },
