@@ -1,0 +1,29 @@
+{
+  "Author": "Bliksoft",
+  "Name": "Deck Probe",
+  "Description": "Development probe: logs raw Studio messages and paints test images.",
+  "Version": "0.0.1",
+  "Category": "Deck Probe",
+  "CategoryIcon": "assets/icon.svg",
+  "Icon": "assets/icon.svg",
+  "CodePath": "plugin/app.js",
+  "Type": "JavaScript",
+  "UUID": "com.ulanzi.ulanzistudio.deckprobe",
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" }
+  ],
+  "Software": { "MinVersion": "3.0.0" },
+  "Actions": [
+    {
+      "Name": "Probe",
+      "Icon": "assets/icon.svg",
+      "States": [
+        { "Name": "Default", "Image": "assets/icon.svg" }
+      ],
+      "Controllers": ["Keypad", "Encoder"],
+      "Encoder": { "layout": "$UA1" },
+      "Tooltip": "Logs every event from this slot",
+      "UUID": "com.ulanzi.ulanzistudio.deckprobe.probe"
+    }
+  ]
+}

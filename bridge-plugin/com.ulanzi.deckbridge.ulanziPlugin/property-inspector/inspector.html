@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>App slot</title>
+  <style>
+    body { margin: 0; padding: 8px; color: #d1d5db; background: transparent; font: 12px sans-serif; }
+    label { display: block; margin-bottom: 8px; }
+    input, select { display: block; box-sizing: border-box; width: 100%; margin-top: 2px; padding: 4px; color: inherit; background: #1f2937; border: 1px solid #4b5563; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <form id="property-inspector" class="hidden">
+    <label>App ID
+      <input name="appId" placeholder="default">
+    </label>
+    <label>Slot ID
+      <input name="slotId" placeholder="device and key position">
+    </label>
+    <label>Page navigation
+      <select name="navMode">
+        <option value="">None (the app handles this slot)</option>
+        <option value="next">Next app page</option>
+        <option value="previous">Previous app page</option>
+        <option value="page">Specific page</option>
+      </select>
+    </label>
+    <label id="nav-page" class="hidden">Page ID
+      <input name="navPage">
+    </label>
+  </form>
+
+  <script src="../libs/js/constants.js"></script>
+  <script src="../libs/js/eventEmitter.js"></script>
+  <script src="../libs/js/timers.js"></script>
+  <script src="../libs/js/utils.js"></script>
+  <script src="../libs/js/ulanziApi.js"></script>
+  <script src="./inspector.js"></script>
+</body>
+</html>

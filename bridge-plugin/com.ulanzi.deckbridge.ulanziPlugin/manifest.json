@@ -1,0 +1,30 @@
+{
+  "Author": "Bliksoft",
+  "Name": "Deck Bridge",
+  "Description": "Lets external applications drive deck slots.",
+  "Version": "0.1.0",
+  "Category": "Deck Bridge",
+  "CategoryIcon": "assets/icon.svg",
+  "Icon": "assets/icon.svg",
+  "CodePath": "plugin/app.js",
+  "Type": "JavaScript",
+  "UUID": "com.ulanzi.ulanzistudio.deckbridge",
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" }
+  ],
+  "Software": { "MinVersion": "3.3.0" },
+  "Actions": [
+    {
+      "Name": "App slot",
+      "Icon": "assets/icon.svg",
+      "States": [
+        { "Name": "Default", "Image": "assets/icon.svg" }
+      ],
+      "Controllers": ["Keypad", "Encoder"],
+      "Encoder": { "layout": "$UA1" },
+      "Tooltip": "A slot driven by an external application",
+      "UUID": "com.ulanzi.ulanzistudio.deckbridge.slot",
+      "PropertyInspectorPath": "property-inspector/inspector.html"
+    }
+  ]
+}
