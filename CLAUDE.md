@@ -12,7 +12,7 @@ Ulanzi Studio <-ws:3906-> bridge plugin (Node) <-ws:39380-> apps (Java client, o
 
 - `bridge-plugin/`: the Studio plugin. A Java process can't be a Studio plugin, so this has to be Node. `plugin/bridge.js` holds the logic with no I/O; `plugin/app.js` wires up the sockets. Pages live here so every client reuses them.
 - `ulanzi-client/`: Java protocol client. Must stay free of runtime dependencies (no Spring, JavaFX, or logging library), hence its own JSON codec.
-- `ulanzi-client-fx/`: pages of `UIActionBase` bindings, from `cz.bliksoft.javautils.app.ui.actions` in `../BSToolbox-jfx` (`common-java-utils-jfx`, currently a local `0.9-SNAPSHOT`). That dependency stays out of `ulanzi-client`. Its tests start the JavaFX toolkit, so they need a desktop session.
+- `ulanzi-client-fx/`: pages of `UIActionBase` bindings, from `cz.bliksoft.javautils.app.ui.actions` in `../BSToolbox-jfx` (`common-java-utils-jfx` `0.8`, `provided` scope, so the client app brings its own version). That dependency stays out of `ulanzi-client`. Its tests start the JavaFX toolkit, so they need a desktop session.
 - `probe/`: development plugin that logs raw Studio messages.
 - `docs/protocol.md`: the app protocol, and Studio behaviour measured on real hardware. It overrides the public SDK docs, which lag the installed Studio.
 

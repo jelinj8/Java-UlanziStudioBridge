@@ -22,7 +22,9 @@
 		<dependency>
 			<groupId>cz.bliksoft.java</groupId>
 			<artifactId>common-java-utils-jfx</artifactId>
-			<version>0.9-SNAPSHOT</version>
+			<version>0.8</version>
+			<!-- the client app brings its own version -->
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>

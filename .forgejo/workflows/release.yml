@@ -112,5 +112,5 @@ jobs:
           curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST "$API/generic/deck-bridge-plugin/-/link/$REPO_NAME" || true
           for ARTIFACT in ulanzi-parent ulanzi-client ulanzi-client-fx; do
             curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST \
-              "$API/maven/cz.bliksoft.ulanzi-$ARTIFACT/-/link/$REPO_NAME" || true
+              "$API/maven/cz.bliksoft.ulanzi%3A$ARTIFACT/-/link/$REPO_NAME" || true
           done
