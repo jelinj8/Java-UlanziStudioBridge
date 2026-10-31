@@ -45,7 +45,7 @@ From code, `UlanziStudioPlugin.getBinder(appId)` returns the binder for `showPag
 
 ## Several Java apps on one Studio profile
 
-Studio links a profile to an executable, and every Java app is `java.exe` or `javaw.exe` to it. To share one profile:
+Studio links a profile to an executable, and every Java app is `java.exe` or `javaw.exe` to it. A packaged app can have its own executable and profile instead: see [packaging.md](packaging.md). To share one profile:
 
 1. Link a Studio profile to `javaw.exe`, and set **App ID** on its slots to a group name, such as `java`.
 2. Give each app a different app ID folder with `<attribute name="group" value="java"/>`, and define its pages using the same slot IDs.
