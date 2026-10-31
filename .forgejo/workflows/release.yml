@@ -1,0 +1,116 @@
+# Pushing a vMAJOR.MINOR.PATCH tag publishes that version: the Maven artifacts, the plugin archive
+# as a generic package, and a Forgejo release with the archive attached.
+#
+# The version comes from the tag and nothing is committed back, unlike the house maven-release.yml.
+# A commit made on a Forgejo pull mirror gets discarded on the next sync, so this way the workflow
+# needs no change once the repo moves to GitHub. Bump <revision> in pom.xml by hand after a release.
+#
+# Published versions are immutable: re-running after the Maven deploy has succeeded fails with a
+# conflict until that version's packages are deleted in Forgejo.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+jobs:
+  release:
+    runs-on: maven-jdk
+    env:
+      MAVEN_OPTS: "-Dmaven.repo.local=/tmp/m2-repo"
+      EXTRA_MAVEN_OWNERS: "Bliksoft-public"
+      MVN_TOKEN: ${{ secrets.ORG_PACKAGES_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Clone repository at tag
+        run: |
+          git clone --depth 1 --branch "$TAG" \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ vars.REGISTRY_URL }}/${{ github.repository }}.git" src
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Write Maven settings.xml
+        run: |
+          cat > settings.xml <<'PART1'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server>
+                <id>forgejo-deploy</id>
+                <username>bot</username>
+                <password>${env.MVN_TOKEN}</password>
+              </server>
+          PART1
+
+          for OWNER in $EXTRA_MAVEN_OWNERS; do
+            echo "      <server><id>forgejo-$OWNER</id><username>bot</username><password>\${env.MVN_TOKEN}</password></server>" >> settings.xml
+          done
+
+          cat >> settings.xml <<'PART2'
+            </servers>
+            <profiles>
+              <profile>
+                <id>extra-repos</id>
+                <activation><activeByDefault>true</activeByDefault></activation>
+                <repositories>
+          PART2
+
+          for OWNER in $EXTRA_MAVEN_OWNERS; do
+            echo "          <repository><id>forgejo-$OWNER</id><url>https://${{ vars.REGISTRY_URL }}/api/packages/$OWNER/maven</url></repository>" >> settings.xml
+          done
+
+          cat >> settings.xml <<'PART3'
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles><activeProfile>extra-repos</activeProfile></activeProfiles>
+          </settings>
+          PART3
+
+      - name: Test the plugin
+        working-directory: src/bridge-plugin/com.ulanzi.deckbridge.ulanziPlugin
+        run: |
+          npm ci --no-audit --no-fund
+          node --test test/
+
+      - name: Package the plugin
+        working-directory: src
+        run: scripts/package-plugin.sh "$VERSION"
+
+      # deploy's lifecycle includes the tests, so everything is checked before anything is published
+      - name: Build, test, and deploy the Maven artifacts
+        working-directory: src
+        run: |
+          mvn -B -U -s ../settings.xml deploy -Drevision="$VERSION" \
+            -DaltDeploymentRepository=forgejo-deploy::default::https://${{ vars.REGISTRY_URL }}/api/packages/${{ github.repository_owner }}/maven
+
+      - name: Publish the plugin archive
+        working-directory: src
+        run: |
+          FILE="deck-bridge-plugin-$VERSION.zip"
+          curl -sf -u "bot:$MVN_TOKEN" --upload-file "dist/$FILE" \
+            "https://${{ vars.REGISTRY_URL }}/api/packages/${{ github.repository_owner }}/generic/deck-bridge-plugin/$VERSION/$FILE"
+
+      - name: Create the release
+        working-directory: src
+        env:
+          REPO_API: https://${{ vars.REGISTRY_URL }}/api/v1/repos/${{ github.repository }}
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FILE="deck-bridge-plugin-$VERSION.zip"
+          BODY="Install: unzip \`$FILE\` into \`%APPDATA%\\Ulanzi\\UlanziDeck\\Plugins\\\` and restart Ulanzi Studio.
+
+          Maven: \`cz.bliksoft.ulanzi:ulanzi-client:$VERSION\` and \`cz.bliksoft.ulanzi:ulanzi-client-fx:$VERSION\`."
+          ID=$(jq -n --arg tag "$TAG" --arg body "$BODY" '{tag_name: $tag, name: $tag, body: $body}' \
+            | curl -sf -H "Authorization: token $RELEASE_TOKEN" -H "Content-Type: application/json" \
+                -d @- "$REPO_API/releases" | jq -r .id)
+          curl -sf -H "Authorization: token $RELEASE_TOKEN" -F "attachment=@dist/$FILE" \
+            "$REPO_API/releases/$ID/assets?name=$FILE" > /dev/null
+
+      - name: Link packages to this repo (best-effort, cosmetic only)
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d/ -f2)
+          API="https://${{ vars.REGISTRY_URL }}/api/v1/packages/$OWNER"
+          curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST "$API/generic/deck-bridge-plugin/-/link/$REPO_NAME" || true
+          for ARTIFACT in ulanzi-parent ulanzi-client ulanzi-client-fx; do
+            curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST \
+              "$API/maven/cz.bliksoft.ulanzi-$ARTIFACT/-/link/$REPO_NAME" || true
+          done

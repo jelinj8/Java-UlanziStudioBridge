@@ -1,3 +1,5 @@
 target/
+dist/
+.flattened-pom.xml
 node_modules/
 *.log

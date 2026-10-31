@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -121,6 +122,9 @@ class DeckBinderTest {
 			assertTrue(started.await(10, TimeUnit.SECONDS));
 		} catch (IllegalStateException alreadyRunning) {
 			// another test class started it
+		} catch (LinkageError | RuntimeException noDisplay) {
+			// the headless CI runner has no display, so these only run on a desktop
+			Assumptions.abort("JavaFX can't start here: " + noDisplay);
 		}
 		Platform.setImplicitExit(false);
 	}

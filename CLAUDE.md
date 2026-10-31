@@ -35,6 +35,17 @@ java -cp "ulanzi-client/target/classes;ulanzi-client/target/test-classes" cz.bli
 
 To deploy the bridge, copy the plugin folder without `test/` to `%APPDATA%\Ulanzi\UlanziDeck\Plugins\` and restart Studio. It doesn't relaunch a plugin that exits.
 
+## Publishing
+
+Forgejo Actions in `.forgejo/workflows/`, publishing to the `Bliksoft-public` registry:
+
+- `maven-snapshot-deploy.yml`: on each push to `main`, publishes the `<revision>` snapshot.
+- `release.yml`: on a `vX.Y.Z` tag, publishes that version and creates a Forgejo release with the plugin archive (`scripts/package-plugin.sh`). Nothing is committed back, so bump `<revision>` in `pom.xml` by hand afterwards.
+
+`ulanzi-client-fx` tests skip themselves on the headless runner, so run `mvn test` on a desktop before tagging.
+
+The repo will move to `jelinj8` on GitHub, with Forgejo pull-mirroring it. The workflows move with it, since Forgejo reads `.forgejo/` from the mirrored content and GitHub ignores it. At that point, also update the remote, and add the house `maven-mirror-sync.yml`.
+
 ## Hardware facts that shape the code
 
 See `docs/protocol.md` for detail.

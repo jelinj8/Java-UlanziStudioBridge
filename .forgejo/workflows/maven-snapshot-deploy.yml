@@ -1,0 +1,106 @@
+# Every push to main: tests the plugin and Java modules, then publishes snapshots to this owner's
+# Forgejo registry: the Maven artifacts, and the plugin archive as a generic package.
+#
+# Keeps working after the repo moves to GitHub with Forgejo pull-mirroring it, apart from the branch
+# name below if that changes. See CLAUDE.md's "Publishing" section.
+#
+# Extra read repositories are generated into this CI-only settings.xml rather than added to the
+# poms, as in the other Bliksoft-public repos. Forgejo requires auth to read Maven packages even
+# under a public org. -U makes Maven re-check for newer SNAPSHOT dependencies, since the runner's
+# Maven cache persists between jobs.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  snapshot-deploy:
+    runs-on: maven-jdk
+    env:
+      MAVEN_OPTS: "-Dmaven.repo.local=/tmp/m2-repo"
+      EXTRA_MAVEN_OWNERS: "Bliksoft-public"
+      MVN_TOKEN: ${{ secrets.ORG_PACKAGES_TOKEN }}
+    steps:
+      - name: Clone repository
+        run: |
+          git clone --depth 1 --branch "${{ github.ref_name }}" \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${{ vars.REGISTRY_URL }}/${{ github.repository }}.git" src
+
+      - name: Write Maven settings.xml
+        run: |
+          cat > settings.xml <<'PART1'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server>
+                <id>forgejo-deploy</id>
+                <username>bot</username>
+                <password>${env.MVN_TOKEN}</password>
+              </server>
+          PART1
+
+          for OWNER in $EXTRA_MAVEN_OWNERS; do
+            echo "      <server><id>forgejo-$OWNER</id><username>bot</username><password>\${env.MVN_TOKEN}</password></server>" >> settings.xml
+          done
+
+          cat >> settings.xml <<'PART2'
+            </servers>
+            <profiles>
+              <profile>
+                <id>extra-repos</id>
+                <activation><activeByDefault>true</activeByDefault></activation>
+                <repositories>
+          PART2
+
+          for OWNER in $EXTRA_MAVEN_OWNERS; do
+            echo "          <repository><id>forgejo-$OWNER</id><url>https://${{ vars.REGISTRY_URL }}/api/packages/$OWNER/maven</url></repository>" >> settings.xml
+          done
+
+          cat >> settings.xml <<'PART3'
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles><activeProfile>extra-repos</activeProfile></activeProfiles>
+          </settings>
+          PART3
+
+      - name: Test the plugin
+        working-directory: src/bridge-plugin/com.ulanzi.deckbridge.ulanziPlugin
+        run: |
+          npm ci --no-audit --no-fund
+          node --test test/
+
+      - name: Build and test the Java modules
+        working-directory: src
+        run: mvn -B -U verify -s ../settings.xml
+
+      - name: Determine version
+        working-directory: src
+        run: echo "VERSION=$(mvn -B -q help:evaluate -Dexpression=revision -DforceStdout)" >> "$GITHUB_ENV"
+
+      - name: Deploy the Maven artifacts
+        working-directory: src
+        run: |
+          mvn -B -U -s ../settings.xml deploy -DskipTests \
+            -DaltDeploymentRepository=forgejo-deploy::default::https://${{ vars.REGISTRY_URL }}/api/packages/${{ github.repository_owner }}/maven
+
+      - name: Publish the plugin archive
+        working-directory: src
+        run: |
+          scripts/package-plugin.sh "$VERSION"
+          FILE="deck-bridge-plugin-$VERSION.zip"
+          URL="https://${{ vars.REGISTRY_URL }}/api/packages/${{ github.repository_owner }}/generic/deck-bridge-plugin/$VERSION/$FILE"
+          # a generic package file can't be overwritten, so the previous snapshot's goes first
+          curl -s -o /dev/null -u "bot:$MVN_TOKEN" -X DELETE "$URL"
+          curl -sf -u "bot:$MVN_TOKEN" --upload-file "dist/$FILE" "$URL"
+
+      - name: Link packages to this repo (best-effort, cosmetic only)
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d/ -f2)
+          API="https://${{ vars.REGISTRY_URL }}/api/v1/packages/$OWNER"
+          curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST "$API/generic/deck-bridge-plugin/-/link/$REPO_NAME" || true
+          for ARTIFACT in ulanzi-parent ulanzi-client ulanzi-client-fx; do
+            curl -s -w 'link status=%{http_code}\n' -u "bot:$MVN_TOKEN" -X POST \
+              "$API/maven/cz.bliksoft.ulanzi-$ARTIFACT/-/link/$REPO_NAME" || true
+          done
