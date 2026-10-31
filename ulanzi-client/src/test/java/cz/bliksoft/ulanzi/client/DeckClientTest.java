@@ -112,6 +112,19 @@ class DeckClientTest {
 	}
 
 	@Test
+	void joinsAGroupAndReportsFocus() throws Exception {
+		try (FakeBridge other = new FakeBridge();
+				DeckClient grouped = new DeckClient(other.uri(), "demo", "java", new DeckListener() {
+				})) {
+			grouped.start();
+			assertEquals(Map.of("type", "hello", "protocol", 1.0, "appId", "demo", "group", "java"),
+					Json.parse(other.nextMessage()));
+			grouped.reportFocus();
+			assertEquals(Map.of("type", "focus"), Json.parse(other.nextMessage()));
+		}
+	}
+
+	@Test
 	void reassemblesFragmentedMessages() throws Exception {
 		bridge.sendFragmented("{\"type\":\"pageCh", "anged\",\"page\":\"p\"}");
 		assertEquals(new PageChanged("p"), nextEvent());

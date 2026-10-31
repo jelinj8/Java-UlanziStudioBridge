@@ -18,7 +18,11 @@ import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.Property;
+import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableBooleanValue;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
+import javafx.stage.Window;
 
 /**
  * Keeps deck slots in step with UI actions, in switchable pages. Actions run on
@@ -34,22 +38,65 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 	private final IconRenderer renderer = new IconRenderer();
 	// FX thread only
 	private final Map<String, RegisteredPage> pages = new LinkedHashMap<>();
+	private final boolean reportsFocus;
+	private final ChangeListener<Boolean> windowFocus = (o, was, focused) -> {
+		if (focused)
+			reportFocus();
+	};
+	private Runnable focusDetacher = () -> {
+	};
 
 	public DeckBinder(String appId) {
 		this(listener -> new DeckClient(appId, listener));
 	}
 
 	public DeckBinder(URI uri, String appId) {
-		this(listener -> new DeckClient(uri, appId, listener));
+		this(uri, appId, null);
+	}
+
+	/**
+	 * @param group a group to join, or {@code null}. This app then gets the group's
+	 *              slots whenever one of its windows gains focus.
+	 */
+	public DeckBinder(URI uri, String appId, String group) {
+		this(listener -> new DeckClient(uri, appId, group, listener), group != null);
 	}
 
 	DeckBinder(Function<DeckListener, DeckClient> clientFactory) {
+		this(clientFactory, false);
+	}
+
+	DeckBinder(Function<DeckListener, DeckClient> clientFactory, boolean reportsFocus) {
 		client = clientFactory.apply(this);
+		this.reportsFocus = reportsFocus;
 	}
 
 	/** Starts connecting to the bridge; returns immediately. */
 	public void start() {
+		if (reportsFocus)
+			onFxThread(this::trackWindowFocus);
 		client.start();
+	}
+
+	private void trackWindowFocus() {
+		ObservableList<Window> windows = Window.getWindows();
+		ListChangeListener<Window> windowsChanged = change -> {
+			while (change.next()) {
+				change.getRemoved().forEach(w -> w.focusedProperty().removeListener(windowFocus));
+				change.getAddedSubList().forEach(w -> w.focusedProperty().addListener(windowFocus));
+			}
+		};
+		windows.addListener(windowsChanged);
+		windows.forEach(w -> w.focusedProperty().addListener(windowFocus));
+		focusDetacher = () -> {
+			windows.removeListener(windowsChanged);
+			windows.forEach(w -> w.focusedProperty().removeListener(windowFocus));
+		};
+	}
+
+	/** Whether a window of this app has focus now. FX thread only. */
+	boolean hasFocusedWindow() {
+		return Window.getWindows().stream().anyMatch(Window::isFocused);
 	}
 
 	/** Adds a page or replaces one with the same ID. The first page registered shows first. */
@@ -87,6 +134,7 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 			onFxThread(() -> {
 				pages.values().forEach(RegisteredPage::detach);
 				pages.clear();
+				focusDetacher.run();
 			});
 		} catch (IllegalStateException toolkitGone) {
 			log.log(Level.DEBUG, "JavaFX has already exited, so listeners stay attached");
@@ -100,7 +148,17 @@ public class DeckBinder implements DeckListener, AutoCloseable {
 		onFxThread(() -> {
 			pages.values().forEach(RegisteredPage::renderAll);
 			client.setPageOrder(List.copyOf(pages.keySet()));
+			if (reportsFocus && hasFocusedWindow())
+				reportFocus();
 		});
+	}
+
+	/**
+	 * Claims this app's group slots. Happens by itself when a window gains focus, so
+	 * this is for focus JavaFX can't see, such as a native window.
+	 */
+	public void reportFocus() {
+		client.reportFocus();
 	}
 
 	@Override

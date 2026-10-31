@@ -8,6 +8,7 @@ With `ulanzi-client-fx` on the classpath of a BSToolbox app, `UlanziStudioPlugin
     <attribute name="uri" value="ws://127.0.0.1:39380"/>     <!-- optional -->
     <file name="freecad">                                    <!-- the app ID -->
       <attribute name="uri" value="ws://127.0.0.1:39380"/>   <!-- optional, overrides the one above -->
+      <attribute name="group" value="java"/>                 <!-- optional, see below -->
       <file name="pages">
         <file name="main" type="deckPage" position="10">
           <file name="D200X:1_1"><attribute name="action" value="Save"/></file>
@@ -41,6 +42,17 @@ With `ulanzi-client-fx` on the classpath of a BSToolbox app, `UlanziStudioPlugin
 Slot IDs default to `<model>:<key>`, so one configuration works on any device of that model. Two devices of one model show the same content until the slots on the additional device get their own names through the **Slot ID** field in Studio, for example `second:1_1`. Studio's messages don't identify individual devices.
 
 From code, `UlanziStudioPlugin.getBinder(appId)` returns the binder for `showPage` or for adding pages built in code. It returns `null` for an app ID with no pages configured.
+
+## Several Java apps on one Studio profile
+
+Studio links a profile to an executable, and every Java app is `java.exe` or `javaw.exe` to it. To share one profile:
+
+1. Link a Studio profile to `javaw.exe`, and set **App ID** on its slots to a group name, such as `java`.
+2. Give each app a different app ID folder with `<attribute name="group" value="java"/>`, and define its pages using the same slot IDs.
+
+The slots belong to whichever app in the group most recently had a focused JavaFX window, and repaint from that app's pages when focus moves. If that app disconnects, they go to the next most recent one. Focus leaving for a non-Java app, or a Java app that isn't in the group, changes nothing, so the slots stay with the last member. Slots whose App ID is a member's own app ID stay with that app regardless of focus.
+
+From code without JavaFX windows, `DeckClient.reportFocus()` and the `DeckClient` constructor taking a group do the same.
 
 ## When something is wrong
 

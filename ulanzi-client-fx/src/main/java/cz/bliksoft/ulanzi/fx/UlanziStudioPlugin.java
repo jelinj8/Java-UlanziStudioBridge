@@ -8,7 +8,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 
 import cz.bliksoft.javautils.modules.ModuleBase;
 import cz.bliksoft.javautils.xmlfilesystem.FileLoader;
@@ -30,14 +29,18 @@ public class UlanziStudioPlugin extends ModuleBase {
 	private static final Map<String, DeckBinder> activeBinders = new ConcurrentHashMap<>();
 
 	private final String root;
-	private final BiFunction<URI, String, DeckBinder> binderFactory;
+	private final BinderFactory binderFactory;
 	private final Map<String, DeckBinder> binders = new LinkedHashMap<>();
+
+	interface BinderFactory {
+		DeckBinder create(URI uri, String appId, String group);
+	}
 
 	public UlanziStudioPlugin() {
 		this(ROOT, DeckBinder::new);
 	}
 
-	UlanziStudioPlugin(String root, BiFunction<URI, String, DeckBinder> binderFactory) {
+	UlanziStudioPlugin(String root, BinderFactory binderFactory) {
 		this.root = root;
 		this.binderFactory = binderFactory;
 	}
@@ -89,7 +92,7 @@ public class UlanziStudioPlugin extends ModuleBase {
 			return;
 		}
 		String uri = app.getAttribute(URI_ATTRIBUTE, deck.getAttribute(URI_ATTRIBUTE, DeckClient.DEFAULT_URI.toString()));
-		DeckBinder binder = binderFactory.apply(URI.create(uri), app.getName());
+		DeckBinder binder = binderFactory.create(URI.create(uri), app.getName(), app.getAttribute("group"));
 		pages.forEach(binder::register);
 		binder.start();
 		binders.put(app.getName(), binder);

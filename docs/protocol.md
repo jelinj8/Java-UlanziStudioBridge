@@ -8,7 +8,8 @@ Apps connect to `ws://127.0.0.1:39380` (`DECK_BRIDGE_PORT` overrides the port). 
 
 | Message | Meaning |
 |---|---|
-| `hello {protocol: 1, appId}` | Must be first. Close codes: 4001 unsupported protocol, 4002 missing `appId`. A newer connection with the same `appId` closes the older one with 4000. |
+| `hello {protocol: 1, appId, group?}` | Must be first. A slot whose App ID names `group` belongs to the group's most recently focused connected app. Close codes: 4001 unsupported protocol, 4002 missing `appId`. A newer connection with the same `appId` closes the older one with 4000. |
+| `focus` | This app has the user's focus, so its group's slots move to it. Ignored without a group. |
 | `render {page, slotId, image?, text?, nav?}` | Replaces the slot's content on that page. `image` is base64 PNG without a prefix. `page` defaults to `main`. The first render makes its page current. |
 | `showPage {page}` | Makes the page current and repaints. |
 | `setPageOrder {pages}` | Sets the order for next/previous. Default: order of first render. |

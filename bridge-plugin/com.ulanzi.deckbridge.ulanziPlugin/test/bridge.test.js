@@ -255,6 +255,119 @@ test('unchanged settings send nothing', () => {
 	assert.equal(studio.length, 0);
 });
 
+function connectInGroup(bridge, appId, group = 'java') {
+	const conn = {
+		sent: [],
+		send(text) { this.sent.push(JSON.parse(text)); },
+		close(code) { this.closed = code; },
+	};
+	bridge.onAppMessage(conn, { type: 'hello', protocol: PROTOCOL, appId, group });
+	return conn;
+}
+
+function groupSetup() {
+	const { bridge, studio } = setup();
+	bridge.onStudioMessage(slot('0_0', { param: { appId: 'java' } }));
+	const a = connectInGroup(bridge, 'a');
+	const b = connectInGroup(bridge, 'b');
+	bridge.onAppMessage(a, { type: 'render', page: 'pa', slotId: 'D200X:0_0', image: 'AAA', text: 'from a' });
+	bridge.onAppMessage(b, { type: 'render', page: 'pb', slotId: 'D200X:0_0', image: 'BBB', text: 'from b' });
+	const painted = () => studio.filter((m) => m.cmd === 'state').pop().param.statelist[0];
+	return { bridge, studio, a, b, painted };
+}
+
+test('group slots follow the focused app, showing its content and sending it input', () => {
+	const { bridge, a, b, painted } = groupSetup();
+	assert.equal(painted().data, 'AAA', 'the first member starts with them');
+	bridge.onStudioMessage(event('run', '0_0'));
+	assert.equal(inputs(a).length, 1);
+	assert.equal(inputs(a)[0].page, 'pa');
+	assert.equal(inputs(b).length, 0);
+
+	bridge.onAppMessage(b, { type: 'focus' });
+	assert.equal(painted().data, 'BBB');
+	bridge.onStudioMessage(event('run', '0_0'));
+	assert.equal(inputs(a).length, 1);
+	assert.deepEqual(inputs(b).pop(), { type: 'input', page: 'pb', slotId: 'D200X:0_0', event: { type: 'run' } });
+
+	bridge.onAppMessage(a, { type: 'focus' });
+	assert.equal(painted().data, 'AAA');
+});
+
+test('an unfocused member renders to its cache without touching the deck', () => {
+	const { bridge, studio, b, a, painted } = groupSetup();
+	studio.length = 0;
+	bridge.onAppMessage(b, { type: 'render', page: 'pb', slotId: 'D200X:0_0', image: 'NEW' });
+	assert.equal(studio.length, 0);
+	bridge.onAppMessage(b, { type: 'focus' });
+	assert.equal(painted().data, 'NEW');
+	bridge.onAppMessage(a, { type: 'focus' });
+});
+
+test('nav in a group slot acts on the focused app, including its pages', () => {
+	const { bridge, a, b } = groupSetup();
+	bridge.onAppMessage(b, { type: 'render', page: 'pb2', slotId: 'x', image: 'I' });
+	bridge.onAppMessage(b, { type: 'render', page: 'pb', slotId: 'D200X:0_0', image: 'B', nav: { page: 'pb2' } });
+	bridge.onAppMessage(b, { type: 'focus' });
+	const before = a.sent.length;
+	bridge.onStudioMessage(event('run', '0_0'));
+	assert.equal(b.sent.pop().page, 'pb2');
+	assert.equal(a.sent.length, before);
+});
+
+test('when the focused app disconnects, the slots go to the next one, then offline', () => {
+	const { bridge, studio, a, b, painted } = groupSetup();
+	bridge.onAppMessage(b, { type: 'focus' });
+	bridge.onAppDisconnected(b);
+	assert.equal(painted().data, 'AAA');
+	bridge.onAppDisconnected(a);
+	assert.equal(painted().type, 0);
+	assert.equal(studio.filter((m) => m.cmd === 'setTitle').pop().param.text, 'offline');
+});
+
+test('a reconnecting member keeps its focus order and its pages', () => {
+	const { bridge, b, painted } = groupSetup();
+	bridge.onAppMessage(b, { type: 'focus' });
+	bridge.onAppDisconnected(b);
+	assert.equal(painted().data, 'AAA');
+	connectInGroup(bridge, 'b');
+	assert.equal(painted().data, 'BBB');
+});
+
+test('every member sees the group slots whichever has them', () => {
+	const { bridge, a, b } = groupSetup();
+	const slotsOf = (conn) => conn.sent.filter((m) => m.type === 'slots').pop().slots.map((s) => s.slotId);
+	assert.deepEqual(slotsOf(a), ['D200X:0_0']);
+	assert.deepEqual(slotsOf(b), ['D200X:0_0']);
+	bridge.onStudioMessage(slot('0_1', { param: { appId: 'java' } }));
+	assert.deepEqual(slotsOf(a), ['D200X:0_0', 'D200X:0_1']);
+	assert.deepEqual(slotsOf(b), ['D200X:0_0', 'D200X:0_1']);
+});
+
+test('slots with a member\'s own App ID stay with it regardless of focus', () => {
+	const { bridge, a, b } = groupSetup();
+	bridge.onStudioMessage(slot('0_1', { param: { appId: 'a' } }));
+	bridge.onAppMessage(b, { type: 'focus' });
+	bridge.onStudioMessage(event('run', '0_1'));
+	assert.equal(inputs(a).pop().slotId, 'D200X:0_1');
+	assert.equal(inputs(b).length, 0);
+});
+
+test('focus from an app outside any group changes nothing', () => {
+	const { bridge, studio } = setup();
+	bridge.onStudioMessage(slot('0_0'));
+	const conn = connect(bridge);
+	studio.length = 0;
+	bridge.onAppMessage(conn, { type: 'focus' });
+	assert.equal(studio.length, 0);
+});
+
+test('reconnecting in another group leaves the old one', () => {
+	const { bridge, painted } = groupSetup();
+	connectInGroup(bridge, 'a', 'other');
+	assert.equal(painted().data, 'BBB');
+});
+
 test('clear removes slots', () => {
 	const { bridge } = setup();
 	bridge.onStudioMessage(slot('0_0'));

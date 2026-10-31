@@ -33,6 +33,8 @@ class Bridge {
 		this.now = now;
 		this.slots = new Map();
 		this.apps = new Map();
+		// group -> its apps' IDs, the most recently focused first
+		this.groups = new Map();
 	}
 
 	// ---- Studio side ----
@@ -89,7 +91,7 @@ class Bridge {
 		};
 		this.#applySettings(slot, msg.param);
 		this.slots.set(context, slot);
-		this.#sendSlots(slot.appId);
+		this.#notifySlots(slot.appId);
 		this.#paintSlot(slot);
 	}
 
@@ -98,7 +100,7 @@ class Bridge {
 		if (!slot)
 			return;
 		this.slots.delete(context);
-		this.#sendSlots(slot.appId);
+		this.#notifySlots(slot.appId);
 	}
 
 	#updateSettings(msg, settings) {
@@ -112,9 +114,9 @@ class Bridge {
 		// Studio resends unchanged settings, e.g. when a slot is selected
 		if (previousAppId === slot.appId && previousSlotId === slot.slotId && previousNav === JSON.stringify(slot.nav))
 			return;
-		this.#sendSlots(slot.appId);
+		this.#notifySlots(slot.appId);
 		if (previousAppId !== slot.appId)
-			this.#sendSlots(previousAppId);
+			this.#notifySlots(previousAppId);
 		slot.lastPaint = null;
 		this.#paintSlot(slot);
 	}
@@ -171,12 +173,21 @@ class Bridge {
 	#navOf(slot) {
 		if (slot.nav)
 			return slot.nav;
-		const app = this.apps.get(slot.appId);
+		const app = this.apps.get(this.#routeOf(slot));
 		return app?.pages.get(app.current)?.get(slot.slotId)?.nav ?? null;
 	}
 
+	/**
+	 * The app a slot currently belongs to. A slot's App ID can name a group, which
+	 * means its most recently focused connected app.
+	 */
+	#routeOf(slot) {
+		const members = this.groups.get(slot.appId);
+		return members?.find((id) => this.apps.get(id)?.conn) ?? slot.appId;
+	}
+
 	#navigate(slot, nav) {
-		const appId = slot.appId;
+		const appId = this.#routeOf(slot);
 		const app = this.apps.get(appId);
 		if (!app?.conn)
 			return;
@@ -226,6 +237,9 @@ class Bridge {
 				for (const slot of this.#slotsOf(appId, msg.slotId))
 					this.toStudio({ cmd: 'showAlert', uuid: slot.uuid, key: slot.key, actionid: slot.actionid });
 				break;
+			case 'focus':
+				this.#focus(appId, app);
+				break;
 			default:
 				this.log(`unknown message type ${msg.type} from ${appId}`);
 		}
@@ -236,7 +250,40 @@ class Bridge {
 		if (!app || app.conn !== conn)
 			return;
 		app.conn = null;
-		this.#paintApp(conn.appId);
+		this.#repaintAround(conn.appId, app);
+	}
+
+	#focus(appId, app) {
+		const members = this.groups.get(app.group);
+		if (!members || members[0] === appId)
+			return;
+		members.splice(members.indexOf(appId), 1);
+		members.unshift(appId);
+		this.#repaintAround(appId, app);
+	}
+
+	#joinGroup(appId, app, group) {
+		if (app.group !== group) {
+			const previous = this.groups.get(app.group);
+			if (previous)
+				previous.splice(previous.indexOf(appId), 1);
+			const left = app.group;
+			app.group = group;
+			if (left) {
+				for (const slot of this.slots.values()) {
+					if (slot.appId === left) {
+						slot.lastPaint = null;
+						this.#paintSlot(slot);
+					}
+				}
+			}
+		}
+		if (!group)
+			return;
+		if (!this.groups.has(group))
+			this.groups.set(group, []);
+		if (!this.groups.get(group).includes(appId))
+			this.groups.get(group).push(appId);
 	}
 
 	#hello(conn, msg) {
@@ -255,15 +302,16 @@ class Bridge {
 			app.conn.close(4000, 'replaced by a newer connection');
 		app.conn = conn;
 		conn.appId = appId;
+		this.#joinGroup(appId, app, msg.group?.trim() || null);
 		this.#send(app, { type: 'welcome', protocol: PROTOCOL, currentPage: app.current });
 		this.#sendSlots(appId);
-		this.#paintApp(appId);
+		this.#repaintAround(appId, app);
 	}
 
 	#app(appId) {
 		let app = this.apps.get(appId);
 		if (!app) {
-			app = { conn: null, pages: new Map(), order: [], current: null };
+			app = { conn: null, group: null, pages: new Map(), order: [], current: null };
 			this.apps.set(appId, app);
 		}
 		return app;
@@ -308,22 +356,32 @@ class Bridge {
 	}
 
 	#slotsOf(appId, slotId) {
-		return [...this.slots.values()].filter((s) => s.appId === appId && (slotId === undefined || s.slotId === slotId));
+		return [...this.slots.values()].filter((s) => this.#routeOf(s) === appId && (slotId === undefined || s.slotId === slotId));
 	}
 
 	#sendInput(slot, event) {
-		const app = this.apps.get(slot.appId);
+		const app = this.apps.get(this.#routeOf(slot));
 		if (app?.conn)
 			this.#send(app, { type: 'input', page: app.current, slotId: slot.slotId, event });
+	}
+
+	/** @param {string} id the App ID on a slot whose list changed: an app, a group, or both */
+	#notifySlots(id) {
+		this.#sendSlots(id);
+		for (const member of this.groups.get(id) ?? [])
+			this.#sendSlots(member);
 	}
 
 	#sendSlots(appId) {
 		const app = this.apps.get(appId);
 		if (!app?.conn)
 			return;
-		// the same slotId can exist on several Studio pages; apps see it once
+		// the same slotId can exist on several Studio pages; apps see it once.
+		// An app in a group sees the group's slots whichever member has them now.
 		const unique = new Map();
-		for (const slot of this.#slotsOf(appId)) {
+		for (const slot of this.slots.values()) {
+			if (slot.appId !== appId && slot.appId !== app.group)
+				continue;
 			unique.set(slot.slotId, {
 				slotId: slot.slotId,
 				controller: slot.controller,
@@ -347,10 +405,20 @@ class Bridge {
 		}
 	}
 
+	/** Repaints an app's slots and its group's, after a change that may have moved them. */
+	#repaintAround(appId, app) {
+		for (const slot of this.slots.values()) {
+			if (slot.appId === appId || (app.group && slot.appId === app.group)) {
+				slot.lastPaint = null;
+				this.#paintSlot(slot);
+			}
+		}
+	}
+
 	#paintSlot(slot) {
 		if (!hasDisplay(slot))
 			return;
-		const app = this.apps.get(slot.appId);
+		const app = this.apps.get(this.#routeOf(slot));
 		const online = Boolean(app?.conn);
 		const content = online ? app.pages.get(app.current)?.get(slot.slotId) : null;
 		const text = online ? content?.text ?? '' : 'offline';

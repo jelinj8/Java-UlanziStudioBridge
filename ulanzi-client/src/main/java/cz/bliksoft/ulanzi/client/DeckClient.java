@@ -35,6 +35,7 @@ public class DeckClient implements AutoCloseable {
 
 	private final URI uri;
 	private final String appId;
+	private final String group;
 	private final DeckListener listener;
 	private final HttpClient http = HttpClient.newHttpClient();
 	private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -56,8 +57,18 @@ public class DeckClient implements AutoCloseable {
 	}
 
 	public DeckClient(URI uri, String appId, DeckListener listener) {
+		this(uri, appId, null, listener);
+	}
+
+	/**
+	 * @param group a group to join, or {@code null}. Slots with the group's name as
+	 *              their App ID belong to its most recently focused app; see
+	 *              {@link #reportFocus()}.
+	 */
+	public DeckClient(URI uri, String appId, String group, DeckListener listener) {
 		this.uri = uri;
 		this.appId = appId;
+		this.group = group;
 		this.listener = listener;
 	}
 
@@ -116,6 +127,11 @@ public class DeckClient implements AutoCloseable {
 		Map<String, Object> message = message("alert");
 		message.put("slotId", slotId);
 		send(message);
+	}
+
+	/** Tells the bridge this app now has the user's focus, so it gets its group's slots. */
+	public void reportFocus() {
+		send(message("focus"));
 	}
 
 	@Override
@@ -259,6 +275,8 @@ public class DeckClient implements AutoCloseable {
 				Map<String, Object> hello = message("hello");
 				hello.put("protocol", PROTOCOL);
 				hello.put("appId", appId);
+				if (group != null)
+					hello.put("group", group);
 				enqueue(ws, hello);
 			}
 			ws.request(1);

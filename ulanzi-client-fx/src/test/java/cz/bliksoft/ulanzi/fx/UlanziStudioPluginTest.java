@@ -21,7 +21,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -76,13 +75,15 @@ class UlanziStudioPluginTest {
 		RecordingClient client;
 		URI uri;
 		String appId;
+		String group;
 		DeckBinder binder;
 		final UlanziStudioPlugin module;
 
 		Harness(String root) {
-			module = new UlanziStudioPlugin(root, (u, a) -> {
+			module = new UlanziStudioPlugin(root, (u, a, g) -> {
 				uri = u;
 				appId = a;
+				group = g;
 				binder = new DeckBinder(listener -> client = new RecordingClient(u, a, listener));
 				return binder;
 			});
@@ -91,17 +92,7 @@ class UlanziStudioPluginTest {
 
 	@BeforeAll
 	static void setUp() throws Exception {
-		CountDownLatch started = new CountDownLatch(1);
-		try {
-			Platform.startup(started::countDown);
-			assertTrue(started.await(10, TimeUnit.SECONDS));
-		} catch (IllegalStateException alreadyRunning) {
-			// another test class started it
-		} catch (LinkageError | RuntimeException noDisplay) {
-			// the headless CI runner has no display, so these only run on a desktop
-			Assumptions.abort("JavaFX can't start here: " + noDisplay);
-		}
-		Platform.setImplicitExit(false);
+		FxToolkit.startOrSkip();
 		for (String key : List.of("a", "b", "c", "d", "e", "f"))
 			UIActions.registerAction("rc." + key, action("rc." + key), "test");
 		UIActions.registerAction("rc.plain", new IUIAction() {
@@ -318,7 +309,7 @@ class UlanziStudioPluginTest {
 		FileSystem.getDefault().importXml(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)), "rcMulti");
 		Map<String, RecordingClient> clients = new ConcurrentHashMap<>();
 		Map<String, URI> uris = new ConcurrentHashMap<>();
-		UlanziStudioPlugin module = new UlanziStudioPlugin("rcMulti", (uri, appId) -> {
+		UlanziStudioPlugin module = new UlanziStudioPlugin("rcMulti", (uri, appId, group) -> {
 			uris.put(appId, uri);
 			return new DeckBinder(listener -> {
 				RecordingClient client = new RecordingClient(uri, appId, listener);
@@ -340,6 +331,20 @@ class UlanziStudioPluginTest {
 		module.cleanup();
 		settle();
 		assertNull(UlanziStudioPlugin.getBinder("appA"));
+	}
+
+	@Test
+	void groupAttributeReachesTheBinder() throws Exception {
+		importPages("rcGroup", attr("group", "java"), page("main", slot("s", attr("action", "rc.a"))));
+		Harness h = install("rcGroup");
+		assertEquals("java", h.group);
+		h.module.cleanup();
+		settle();
+		importPages("rcNoGroup", "", page("main", slot("s", attr("action", "rc.a"))));
+		Harness none = install("rcNoGroup");
+		assertNull(none.group);
+		none.module.cleanup();
+		settle();
 	}
 
 	@Test

@@ -16,11 +16,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.imageio.ImageIO;
 
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +33,7 @@ import cz.bliksoft.ulanzi.client.SlotInput;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ObservableBooleanValue;
+import javafx.stage.Stage;
 
 class DeckBinderTest {
 	private static final String ICON = "[P]:M0 0H100V100H0Z";
@@ -43,6 +44,7 @@ class DeckBinderTest {
 	private static final class RecordingClient extends DeckClient {
 		final List<Render> renders = Collections.synchronizedList(new ArrayList<>());
 		final List<String> commands = Collections.synchronizedList(new ArrayList<>());
+		final AtomicInteger focusReports = new AtomicInteger();
 
 		RecordingClient(DeckListener listener) {
 			super(URI.create("ws://127.0.0.1:1"), "test", listener);
@@ -66,6 +68,11 @@ class DeckBinderTest {
 		@Override
 		public void setPageOrder(List<String> pages) {
 			commands.add("order " + pages);
+		}
+
+		@Override
+		public void reportFocus() {
+			focusReports.incrementAndGet();
 		}
 
 		@Override
@@ -116,17 +123,7 @@ class DeckBinderTest {
 
 	@BeforeAll
 	static void startToolkit() throws Exception {
-		CountDownLatch started = new CountDownLatch(1);
-		try {
-			Platform.startup(started::countDown);
-			assertTrue(started.await(10, TimeUnit.SECONDS));
-		} catch (IllegalStateException alreadyRunning) {
-			// another test class started it
-		} catch (LinkageError | RuntimeException noDisplay) {
-			// the headless CI runner has no display, so these only run on a desktop
-			Assumptions.abort("JavaFX can't start here: " + noDisplay);
-		}
-		Platform.setImplicitExit(false);
+		FxToolkit.startOrSkip();
 	}
 
 	@BeforeEach
@@ -356,6 +353,49 @@ class DeckBinderTest {
 		settle();
 		settle();
 		assertEquals(0, client.renders.size());
+	}
+
+	@Test
+	void windowsGainingFocusReportItOnlyInAGroup() throws Exception {
+		DeckBinder grouped = new DeckBinder(listener -> client = new RecordingClient(listener), true);
+		grouped.start();
+		settle();
+		Stage[] stage = new Stage[1];
+		Platform.runLater(() -> {
+			stage[0] = new Stage();
+			stage[0].show();
+			stage[0].requestFocus();
+		});
+		settle();
+		long deadline = System.currentTimeMillis() + 5000;
+		while (client.focusReports.get() == 0 && System.currentTimeMillis() < deadline)
+			Thread.sleep(50);
+		if (stageFocused(stage[0]))
+			assertTrue(client.focusReports.get() > 0, "a focused window must report focus");
+		int reports = client.focusReports.get();
+		grouped.close();
+		settle();
+		Platform.runLater(stage[0]::close);
+		settle();
+		assertEquals(reports, client.focusReports.get());
+	}
+
+	private static boolean stageFocused(Stage stage) throws Exception {
+		boolean[] focused = new boolean[1];
+		CountDownLatch done = new CountDownLatch(1);
+		Platform.runLater(() -> {
+			focused[0] = stage.isFocused();
+			done.countDown();
+		});
+		assertTrue(done.await(10, TimeUnit.SECONDS));
+		return focused[0];
+	}
+
+	@Test
+	void reconnectingWithoutAGroupReportsNoFocus() throws Exception {
+		binder.onConnected(null);
+		settle();
+		assertEquals(0, client.focusReports.get());
 	}
 
 	@Test

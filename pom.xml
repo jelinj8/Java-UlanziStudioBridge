@@ -59,6 +59,10 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.5.2</version>
+					<configuration>
+						<!-- a stuck test fails the build instead of holding a CI runner -->
+						<forkedProcessTimeoutInSeconds>300</forkedProcessTimeoutInSeconds>
+					</configuration>
 				</plugin>
 			</plugins>
 		</pluginManagement>
